@@ -1,3 +1,5 @@
+{-# LANGUAGE MultiWayIf #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -6,14 +8,20 @@ module Client where
 import Network.HTTP.Client
 import Network.HTTP.Types
 
+import Data.Map (Map)
+import qualified Data.Map as Map
+import Data.Set (Set)
+import qualified Data.Set as Set
 import Data.Text (Text, pack, unpack)
 import Data.Aeson
 import Data.Monoid ((<>))
 
-import Control.Monad (liftM, mzero)
+import Control.Monad (liftM, mzero, forM_)
 import Control.Monad.Trans (MonadIO, liftIO)
 import Control.Monad.Reader (MonadReader, ReaderT, runReaderT, ask, asks)
+import Control.Monad.State (execState)
 import Control.Applicative ((<$>), (<*>))
+import Control.Lens (makeLenses, (%=), view, use, uses, _1, _2, _3, _4, _5, _6)
 import Data.Text (Text)
 
 
@@ -77,6 +85,19 @@ newtype HeroId = HeroId Int
 instance FromJSON HeroId where
     parseJSON x = HeroId <$> parseJSON x
 
+data Pos = Pos { posX :: Int , posY :: Int }
+  deriving (Show, Eq, Ord)
+
+instance FromJSON Pos where
+    {-parseJSON (Object o) = Pos <$> o .: "x" <*> o .: "y"-}
+    {-AA 20140204 These seem to be labelled around the wrong way in the JSON-}
+    parseJSON (Object o) = Pos <$> o .: "y" <*> o .: "x"
+    parseJSON _ = mzero
+
+data Tile = FreeTile | WoodTile | TavernTile | HeroTile HeroId | MineTile (Maybe HeroId)
+    deriving (Show, Eq)
+
+
 data Hero = Hero {
     heroId        :: HeroId
   , heroName      :: Text
@@ -104,30 +125,71 @@ instance FromJSON Hero where
     parseJSON _ = mzero
 
 data Board = Board {
-    boardSize  :: Int
-  , boardTiles :: [Tile]
+    _bo_size  :: Int
+  , _bo_tiles :: [Tile]
+  , _bo_mines :: Map Pos (Maybe HeroId)
+  , _bo_taverns :: Set Pos
 } deriving (Show, Eq)
+
+$(makeLenses ''Board)
 
 instance FromJSON Board where
     parseJSON (Object o) = parseBoard <$> o .: "size" <*> o .: "tiles"
     parseJSON _ = mzero
 
 instance ToJSON Board where
-    toJSON b  = object [ "size"  .= boardSize b
-                       , "tiles" .= (printTiles $ boardTiles b)
+    toJSON b  = object [ "size"  .= view bo_size b
+                       , "tiles" .= (printTiles $ view bo_tiles b)
                        ]
 
-data Tile = FreeTile | WoodTile | TavernTile | HeroTile HeroId | MineTile (Maybe HeroId)
-    deriving (Show, Eq)
 
-data Pos = Pos { posX :: Int , posY :: Int }
-  deriving (Show, Eq)
+parseBoard :: Int -> String -> Board
+parseBoard s t =
+  let
+    chunks []       = []
+    chunks (_:[])   = error "chunks: even chars number"
+    chunks (a:b:xs) = (a, b):chunks xs
+  in
+  view _2 $
+  flip execState (Pos 0 0, Board s [] Map.empty Set.empty) $ do
+    forM_ (chunks t) $ \t' -> do
+      pos@Pos{..} <- use _1
+      t <- case t' of
+            (' ', ' ') -> return $ FreeTile
+            ('#', '#') -> return $ WoodTile
+            ('@', x)   -> return $ HeroTile $ HeroId $ read [x]
+            ('[', ']') -> do
+              _2 . bo_taverns %= Set.insert pos
+              return TavernTile
+            ('$', x)   -> do
+              hid <- pure $
+                case x of
+                  '-' -> Nothing
+                  x -> Just (HeroId $ read [x])
+              _2 . bo_mines %= Map.insert pos hid
+              return (MineTile hid)
+            (a, b) -> error $ "parse: unknown tile pattern " ++ (show $ a:b:[])
+      _1 %= const (
+              if | posX == s-1 -> Pos 0 (posY+1)
+                 | otherwise -> Pos (posX+1) posY)
+      _2 . bo_tiles %= (t:)
+    _2 . bo_tiles %= reverse
 
-instance FromJSON Pos where
-    {-parseJSON (Object o) = Pos <$> o .: "x" <*> o .: "y"-}
-    {-AA 20140204 These seem to be labelled around the wrong way in the JSON-}
-    parseJSON (Object o) = Pos <$> o .: "y" <*> o .: "x"
-    parseJSON _ = mzero
+
+printBoard b@Board{..}
+  | null _bo_tiles = ""
+  | otherwise = printTiles (take _bo_size _bo_tiles) <> "\n"
+             <> printBoard b{_bo_tiles = drop _bo_size _bo_tiles}
+
+printTiles :: [Tile] -> Text
+printTiles = foldl (<>) "" . map printTile
+
+printTile FreeTile = "  "
+printTile WoodTile = "##"
+printTile (HeroTile (HeroId i)) = "@" <> (pack $ show i)
+printTile TavernTile = "[]"
+printTile (MineTile Nothing) = "$-"
+printTile (MineTile (Just (HeroId i))) = "$" <> (pack $ show i)
 
 data Dir = Stay | North | South | East | West
     deriving (Show, Eq)
@@ -138,35 +200,6 @@ instance ToJSON Dir where
     toJSON South = String "South"
     toJSON East = String "East"
     toJSON West = String "West"
-
-
-parseBoard :: Int -> String -> Board
-parseBoard s t =
-    Board s $ map parse (chunks t)
-  where
-    chunks []       = []
-    chunks (_:[])   = error "chunks: even chars number"
-    chunks (a:b:xs) = (a, b):chunks xs
-
-    parse (' ', ' ') = FreeTile
-    parse ('#', '#') = WoodTile
-    parse ('@', x)   = HeroTile $ HeroId $ read [x]
-    parse ('[', ']') = TavernTile
-    parse ('$', '-') = MineTile Nothing
-    parse ('$', x)   = MineTile $ Just $ HeroId $ read [x]
-    parse (a, b)     = error $ "parse: unknown tile pattern " ++ (show $ a:b:[])
-
-
-printTiles :: [Tile] -> Text
-printTiles =
-    foldl (<>) "" . map printTile
-  where
-    printTile FreeTile = "  "
-    printTile WoodTile = "##"
-    printTile (HeroTile (HeroId i)) = "@" <> (pack $ show i)
-    printTile TavernTile = "[]"
-    printTile (MineTile Nothing) = "$-"
-    printTile (MineTile (Just (HeroId i))) = "$" <> (pack $ show i)
 
 
 request :: (Client m) => Text -> Value -> m State
