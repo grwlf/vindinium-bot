@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -8,20 +9,26 @@ module Client where
 import Network.HTTP.Client
 import Network.HTTP.Types
 
+import Data.Maybe
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Set (Set)
-import qualified Data.Set as Set
+import Data.HashSet (HashSet)
+import qualified Data.HashSet as HashSet
+import Data.HashMap.Strict(HashMap)
+import qualified Data.HashMap.Strict as HashMap
 import Data.Text (Text, pack, unpack)
 import Data.Aeson
 import Data.Monoid ((<>))
+import Data.Hashable
+import GHC.Generics (Generic)
 
 import Control.Monad (liftM, mzero, forM_)
 import Control.Monad.Trans (MonadIO, liftIO)
 import Control.Monad.Reader (MonadReader, ReaderT, runReaderT, ask, asks)
-import Control.Monad.State (execState)
+import Control.Monad.State.Strict (execState)
 import Control.Applicative ((<$>), (<*>))
-import Control.Lens (makeLenses, (%=), view, use, uses, _1, _2, _3, _4, _5, _6)
+import Control.Lens (Lens, makeLenses, (%=), view, use, uses, _1, _2, _3, _4, _5, _6)
+import qualified Control.Lens as Lens
 import Data.Text (Text)
 
 
@@ -86,7 +93,12 @@ instance FromJSON HeroId where
     parseJSON x = HeroId <$> parseJSON x
 
 data Pos = Pos { posX :: Int , posY :: Int }
-  deriving (Show, Eq, Ord)
+  deriving (Show, Eq, Ord, Generic)
+
+sqdist :: Pos -> Pos -> Int
+sqdist a b = (posX a - posX b)^2 + (posY a - posY b)^2
+
+instance Hashable Pos
 
 instance FromJSON Pos where
     {-parseJSON (Object o) = Pos <$> o .: "x" <*> o .: "y"-}
@@ -126,12 +138,23 @@ instance FromJSON Hero where
 
 data Board = Board {
     _bo_size  :: Int
-  , _bo_tiles :: [Tile]
-  , _bo_mines :: Map Pos (Maybe HeroId)
-  , _bo_taverns :: Set Pos
+  , _bo_tiles :: HashMap Pos Tile
+  , _bo_mines :: HashSet Pos
+  , _bo_taverns :: HashSet Pos
 } deriving (Show, Eq)
 
 $(makeLenses ''Board)
+
+boardPositions Board{..} = [ (Pos x y) | x <- [0.._bo_size-1], y <- [0.._bo_size-1]]
+boardTiles b = map (view bo_tiles b HashMap.!) (boardPositions b)
+
+boardAdjascentTiles :: (Tile -> Bool) -> Pos -> Board -> HashSet Pos
+boardAdjascentTiles flt Pos{..} Board{..} =
+  HashSet.unions $
+  flip concatMap [Pos x y | x <- [posX-1,posX+1], y<-[posY-1,posY+1]] $ \pos ->
+    fromMaybe [] $ do
+      tile <- HashMap.lookup pos _bo_tiles
+      if flt tile then Just [HashSet.singleton pos] else Nothing
 
 instance FromJSON Board where
     parseJSON (Object o) = parseBoard <$> o .: "size" <*> o .: "tiles"
@@ -139,9 +162,8 @@ instance FromJSON Board where
 
 instance ToJSON Board where
     toJSON b  = object [ "size"  .= view bo_size b
-                       , "tiles" .= (printTiles $ view bo_tiles b)
+                       , "tiles" .= printTiles b
                        ]
-
 
 parseBoard :: Int -> String -> Board
 parseBoard s t =
@@ -149,40 +171,42 @@ parseBoard s t =
     chunks []       = []
     chunks (_:[])   = error "chunks: even chars number"
     chunks (a:b:xs) = (a, b):chunks xs
+    p :: (Lens.Field1 s t a b) => Lens s t a b
+    p = _1
+    b :: (Lens.Field2 s t a b) => Lens s t a b
+    b = _2
   in
-  view _2 $
-  flip execState (Pos 0 0, Board s [] Map.empty Set.empty) $ do
-    forM_ (chunks t) $ \t' -> do
-      pos@Pos{..} <- use _1
-      t <- case t' of
+  view b $
+  flip execState (Pos 0 0, Board s HashMap.empty HashSet.empty HashSet.empty) $ do
+    forM_ (chunks t) $ \ab -> do
+      pos@Pos{..} <- use p
+      tile <- case ab of
             (' ', ' ') -> return $ FreeTile
             ('#', '#') -> return $ WoodTile
             ('@', x)   -> return $ HeroTile $ HeroId $ read [x]
             ('[', ']') -> do
-              _2 . bo_taverns %= Set.insert pos
+              b.bo_taverns %= HashSet.insert pos
               return TavernTile
             ('$', x)   -> do
-              hid <- pure $
+              b.bo_mines %= HashSet.insert pos
+              return (MineTile $
                 case x of
                   '-' -> Nothing
-                  x -> Just (HeroId $ read [x])
-              _2 . bo_mines %= Map.insert pos hid
-              return (MineTile hid)
+                  x -> Just (HeroId $ read [x]))
             (a, b) -> error $ "parse: unknown tile pattern " ++ (show $ a:b:[])
-      _1 %= const (
-              if | posX == s-1 -> Pos 0 (posY+1)
-                 | otherwise -> Pos (posX+1) posY)
-      _2 . bo_tiles %= (t:)
-    _2 . bo_tiles %= reverse
+      b.bo_tiles %= HashMap.insert pos tile
+      p %= const ( if | posX == s-1 -> Pos 0 (posY+1)
+                      | otherwise -> Pos (posX+1) posY )
 
+printBoard Board{..} =
+  foldl (<>) "" $
+  flip map [0.._bo_size -1] $ \y ->
+    foldl (<>) "\n" $
+    flip map [0.._bo_size-1] $ \x ->
+      printTile (_bo_tiles HashMap.! (Pos x y))
 
-printBoard b@Board{..}
-  | null _bo_tiles = ""
-  | otherwise = printTiles (take _bo_size _bo_tiles) <> "\n"
-             <> printBoard b{_bo_tiles = drop _bo_size _bo_tiles}
-
-printTiles :: [Tile] -> Text
-printTiles = foldl (<>) "" . map printTile
+printTiles :: Board -> Text
+printTiles = foldl (<>) "" . map printTile . boardTiles
 
 printTile FreeTile = "  "
 printTile WoodTile = "##"
@@ -200,7 +224,6 @@ instance ToJSON Dir where
     toJSON South = String "South"
     toJSON East = String "East"
     toJSON West = String "West"
-
 
 request :: (Client m) => Text -> Value -> m State
 request url val =
