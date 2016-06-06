@@ -32,7 +32,8 @@ executable vindinium-bot
                        http-types,
                        aeson,
                        astar,
-                       heap
+                       heap,
+                       transformers
 
   hs-source-dirs:      src,app,lib
   default-language:    Haskell2010

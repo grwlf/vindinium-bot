@@ -46,15 +46,17 @@ data Settings = Settings {
 class (MonadIO m, MonadReader Settings m) => Client m
 
 newtype HeroId = HeroId Int
-    deriving (Show, Eq)
+  deriving (Show, Eq, Generic)
+
+instance Hashable HeroId
 
 instance FromJSON HeroId where
     parseJSON x = HeroId <$> parseJSON x
 
-data Pos = Pos { posX :: Int , posY :: Int }
+data Pos = Pos { posX :: Integer , posY :: Integer }
   deriving (Show, Eq, Ord, Generic)
 
-sqdist :: Pos -> Pos -> Int
+sqdist :: Pos -> Pos -> Integer
 sqdist a b = (posX a - posX b)^2 + (posY a - posY b)^2
 
 instance Hashable Pos
@@ -97,17 +99,29 @@ instance FromJSON Hero where
                                 <*> o .: "crashed"
     parseJSON _ = mzero
 
+newtype AttackCost = AttackCost { ac_int :: Integer }
+  deriving (Show, Eq, Generic)
+
+
 data Board = Board {
-    _bo_size  :: Int
+    _bo_size  :: Integer
   , _bo_tiles :: HashMap Pos Tile
   , _bo_mines :: HashSet Pos
   , _bo_taverns :: HashSet Pos
+  , _bo_heroes :: HashSet (Pos, HeroId)
+  , _bo_heroMines :: HashMap HeroId Integer
 } deriving (Show, Eq)
+
+nullBoard sz = Board sz HashMap.empty HashSet.empty HashSet.empty HashSet.empty HashMap.empty
 
 $(makeLenses ''Board)
 
 boardPositions Board{..} = [ (Pos x y) | x <- [0.._bo_size-1], y <- [0.._bo_size-1]]
 boardTiles b = map (view bo_tiles b HashMap.!) (boardPositions b)
+
+heroMines :: HeroId -> Board -> Integer
+heroMines h b = fromMaybe 0 (HashMap.lookup h (b^.bo_heroMines))
+
 
 boardAdjascentTiles :: (Tile -> Bool) -> Pos -> Board -> HashSet (Pos)
 boardAdjascentTiles flt Pos{..} Board{..} =
@@ -130,7 +144,7 @@ instance ToJSON Board where
                        , "tiles" .= printTiles b
                        ]
 
-parseBoard :: Int -> String -> Board
+parseBoard :: Integer -> String -> Board
 parseBoard s t =
   let
     chunks []       = []
@@ -142,22 +156,29 @@ parseBoard s t =
     b = _2
   in
   view b $
-  flip execState (Pos 0 0, Board s HashMap.empty HashSet.empty HashSet.empty) $ do
+  flip execState (Pos 0 0, nullBoard s) $ do
     forM_ (chunks t) $ \ab -> do
       pos@Pos{..} <- use p
       tile <- case ab of
             (' ', ' ') -> return $ FreeTile
             ('#', '#') -> return $ WoodTile
-            ('@', x)   -> return $ HeroTile $ HeroId $ read [x]
+            ('@', x)   -> do
+              let hid = HeroId $ read [x]
+              b.bo_heroes %= HashSet.insert (pos,hid)
+              return $ HeroTile hid
             ('[', ']') -> do
               b.bo_taverns %= HashSet.insert pos
               return TavernTile
             ('$', x)   -> do
               b.bo_mines %= HashSet.insert pos
-              return (MineTile $
+              mhid <-
                 case x of
-                  '-' -> Nothing
-                  x -> Just (HeroId $ read [x]))
+                  '-' -> pure Nothing
+                  x -> do
+                    let hid = HeroId $ read [x]
+                    b.bo_heroMines %= HashMap.insertWith (+) hid 1
+                    pure (Just hid)
+              return (MineTile mhid)
             (a, b) -> error $ "parse: unknown tile pattern " ++ (show $ a:b:[])
       b.bo_tiles %= HashMap.insert pos tile
       p %= const ( if | posX == s-1 -> Pos 0 (posY+1)
@@ -192,6 +213,10 @@ instance ToJSON Dir where
     toJSON East = String "East"
     toJSON West = String "West"
 
+posDist :: Pos -> Pos -> Integer
+posDist p1@(Pos x1 y1) p2@(Pos x2 y2) =
+  (abs $ x2-x1) + (abs $ y2-y1)
+
 -- | Difference between adjascent positions
 posDiff :: Pos -> Pos -> Dir
 posDiff p1@(Pos x1 y1) p2@(Pos x2 y2) =
@@ -219,6 +244,12 @@ data Game = Game {
 } deriving (Show, Eq)
 
 $(makeLenses ''Game)
+
+getHero :: Game -> HeroId -> Hero
+getHero g hid =
+  case filter (\h -> (h^.heroId) == hid) (g^.gameHeroes) of
+    [h] -> h
+    _ -> error $ "assert: getHero: no hero with id " ++ show hid ++ " among " ++ show (g^.gameHeroes)
 
 data State = State {
     _stateGame    :: Game

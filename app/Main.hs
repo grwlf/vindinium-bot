@@ -34,33 +34,50 @@ $(makeLenses ''S)
 bot :: (Client m, MonadState S m) => m Dir
 bot = return South
 
+mineAC _ = AttackCost 20
+heroAC h = AttackCost (h^.heroLife + 20)
+tavernAC _ = AttackCost 0
+
 main :: IO ()
 main = runG defaultSettings $ do
-  cs <- startTraining Nothing Nothing
-  out [ view stateViewUrl cs ]
+  -- cs <- startTraining Nothing Nothing
+  cs <- startArena
 
   flip evalStateT (S cs Nothing) $ do
     loop $ do
       cs <- use s_client
-      b <- use (s_client.stateGame.gameBoard)
-      me <- pure (cs^.stateHero)
+      g <- pure $ cs^.stateGame
+      b <- pure $  g^.gameBoard
+      me <- pure $ cs^.stateHero
 
       let p = me^.heroPos
 
+      out [ view stateViewUrl cs ]
       out [ printBoard b ]
 
-      mp <- pure $
-        case me^.heroLife > 20 of
-          True -> nearestMinePath me b
-          False -> nearestTavernPath me b
+      nearTavern <- pure $
+        case nearestTaverns me b of
+          (p:_) | posDist p (me^.heroPos)  == 1 -> True
+                | otherwise -> False
+          otherwise -> False
+
+      mpath <-
+        case (me^.heroLife < 21) || (nearTavern && me^.heroLife < 90)  of
+          True -> do
+            return $ nearestTavernPath me b
+          False -> do
+            let go = probeGoal me g >>= return . view goalPath
+            -- out ["Goal: ", tshow go]
+            return go
 
       dir <- do
-        case mp of
-          Just (goal,path) -> do
+        case mpath of
+          Just path -> do
             let (d,_) = step p path
-            out ["Moving towards ", tshow goal, " bu issuing ", tshow d]
+            out ["Moving towards ", tshow (p_final path), " by issuing ", tshow d, " life ", tshow (me^.heroLife)]
             return d
           Nothing -> do
+            out ["Empty move, life ", tshow (me^.heroLife)]
             return South
 
       cs' <- move cs dir
