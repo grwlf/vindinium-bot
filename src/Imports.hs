@@ -34,6 +34,7 @@ module Imports (
   , module Text.Printf
   , module Text.Heredoc
   , module Text.Show.Pretty
+  , module Imports
 )
 
 where
@@ -72,4 +73,19 @@ import System.Directory
 import Text.Printf
 import Text.Heredoc
 import Text.Show.Pretty hiding(String)
+
+import qualified Data.Text as Text
+import qualified Data.Text.IO as Text
+
+out :: (MonadIO m) => [Text] -> m ()
+out = liftIO . Text.putStrLn . Text.concat
+
+tshow :: (Show a) => a -> Text
+tshow = Text.pack . show
+
+trace1 :: (Show a) => a -> a
+trace1 a = trace (ppShow a) a
+
+traceM :: (Monad m, Show a) => a -> m ()
+traceM a = trace (ppShow a) (return ())
 

@@ -40,12 +40,22 @@ nearestMines h b =
   filter ((/=(MineTile $ Just $ h^.heroId)) . ((b^.bo_tiles) HashMap.!)) $
   HashSet.toList (b^.bo_mines)
 
-nearestMinePath :: Hero -> Board -> Maybe (Pos, Path)
-nearestMinePath h b =
-  for (nearestMines h b) $ \(m,_) ->
-    case pathAstar (h^.heroPos) m b of
-      Just p -> break (m,p)
+-- | Returns list of (tavern,distance), not owned by the Hero, smaller distances first
+nearestTaverns :: Hero -> Board -> [(Pos,Int)]
+nearestTaverns h b =
+  sortBy (compare `on` snd) $
+  map (id &&& (sqdist (h^.heroPos))) $
+  HashSet.toList (b^.bo_taverns)
+
+probePath :: (Hero -> Board -> [(Pos,Int)]) -> Hero -> Board -> Maybe (Pos, Path)
+probePath goals h b =
+  for (goals h b) $ \(g,_) ->
+    case pathAstar (h^.heroPos) g b of
+      Just p -> break (g,p)
       Nothing -> return ()
+
+nearestMinePath = probePath nearestMines
+nearestTavernPath = probePath nearestTaverns
 
 pathAstar :: Pos -> Pos -> Board -> Maybe Path
 pathAstar from to b =

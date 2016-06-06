@@ -9,7 +9,6 @@ import qualified Data.Text as Text
 import qualified Data.Text.IO as Text
 
 import Imports
-import Util
 import Path
 import Client as Client
 
@@ -50,11 +49,16 @@ main = runG defaultSettings $ do
 
       out [ printBoard b ]
 
-      dir <-
-        case nearestMinePath me b of
+      mp <- pure $
+        case me^.heroLife > 20 of
+          True -> nearestMinePath me b
+          False -> nearestTavernPath me b
+
+      dir <- do
+        case mp of
           Just (goal,path) -> do
             let (d,_) = step p path
-            out ["Moving towards ", tshow goal]
+            out ["Moving towards ", tshow goal, " bu issuing ", tshow d]
             return d
           Nothing -> do
             return South

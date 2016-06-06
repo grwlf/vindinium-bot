@@ -196,8 +196,8 @@ instance ToJSON Dir where
 posDiff :: Pos -> Pos -> Dir
 posDiff p1@(Pos x1 y1) p2@(Pos x2 y2) =
   case (x2-x1, y2-y1) of
-    (1,0) -> West
-    (-1,0) -> East
+    (1,0) -> East
+    (-1,0) -> West
     (0,1) -> South
     (0,-1) -> North
     _ -> error $ "assert: posDiff: non-adjascent positions: "
