@@ -38,19 +38,32 @@ bot = return South
 main :: IO ()
 main = runG defaultSettings $ do
   cs <- startTraining Nothing Nothing
-  out [ stateViewUrl cs ]
+  out [ view stateViewUrl cs ]
 
   flip evalStateT (S cs Nothing) $ do
     loop $ do
       cs <- use s_client
-      let b = gameBoard $ stateGame cs
+      b <- use (s_client.stateGame.gameBoard)
+      me <- pure (cs^.stateHero)
+
       out [ printBoard b ]
       out [ tshow $ view bo_mines b]
 
-      cs' <- (bot >>= move cs)
+      mines <- pure $ nearestMines me b
+      m <-
+        case mines of
+          (mine,_):_ -> do
+            out ["Moving to ", tshow mine]
+            let path = pathAstar mine (me^.heroPos) b
+            -- FIXME
+            return North
+          [] -> do
+            out ["Random movement"]
+            return South
 
+      cs' <- move cs m
       s_client %= const cs'
 
-      when (gameFinished $ stateGame cs') $ do
+      when (view (stateGame.gameFinished) cs') $ do
         break ()
 

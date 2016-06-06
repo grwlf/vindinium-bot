@@ -27,7 +27,7 @@ import Control.Monad.Trans (MonadIO, liftIO)
 import Control.Monad.Reader (MonadReader, ReaderT, runReaderT, ask, asks)
 import Control.Monad.State.Strict (execState)
 import Control.Applicative ((<$>), (<*>))
-import Control.Lens (Lens, makeLenses, (%=), view, use, uses, _1, _2, _3, _4, _5, _6)
+import Control.Lens ((^.), Lens, makeLenses, (%=), view, use, uses, _1, _2, _3, _4, _5, _6)
 import qualified Control.Lens as Lens
 import Data.Text (Text)
 
@@ -44,47 +44,6 @@ data Settings = Settings {
 } deriving (Show, Eq)
 
 class (MonadIO m, MonadReader Settings m) => Client m
-
-data State = State {
-    stateGame    :: Game
-  , stateHero    :: Hero
-  , stateToken   :: Text
-  , stateViewUrl :: Text
-  , statePlayUrl :: Text
-} deriving (Show, Eq)
-
-instance FromJSON State where
-    parseJSON (Object o) = State <$> o .: "game"
-                                 <*> o .: "hero"
-                                 <*> o .: "token"
-                                 <*> o .: "viewUrl"
-                                 <*> o .: "playUrl"
-    parseJSON _ = mzero
-
-
-newtype GameId = GameId Text
-    deriving (Show, Eq)
-
-instance FromJSON GameId where
-    parseJSON x = GameId <$> parseJSON x
-
-data Game = Game {
-    gameId       :: GameId
-  , gameTurn     :: Integer
-  , gameMaxTurns :: Integer
-  , gameHeroes   :: [Hero]
-  , gameBoard    :: Board
-  , gameFinished :: Bool
-} deriving (Show, Eq)
-
-instance FromJSON Game where
-    parseJSON (Object o) = Game <$> o .: "id"
-                                <*> o .: "turn"
-                                <*> o .: "maxTurns"
-                                <*> o .: "heroes"
-                                <*> o .: "board"
-                                <*> o .: "finished"
-    parseJSON _ = mzero
 
 newtype HeroId = HeroId Int
     deriving (Show, Eq)
@@ -111,17 +70,19 @@ data Tile = FreeTile | WoodTile | TavernTile | HeroTile HeroId | MineTile (Maybe
 
 
 data Hero = Hero {
-    heroId        :: HeroId
-  , heroName      :: Text
-  , heroUserId    :: Maybe Text
-  , heroElo       :: Maybe Integer
-  , heroPos       :: Pos
-  , heroLife      :: Integer
-  , heroGold      :: Integer
-  , heroMineCount :: Integer
-  , heroSpawnPos  :: Pos
-  , heroCrashed   :: Bool
+    _heroId        :: HeroId
+  , _heroName      :: Text
+  , _heroUserId    :: Maybe Text
+  , _heroElo       :: Maybe Integer
+  , _heroPos       :: Pos
+  , _heroLife      :: Integer
+  , _heroGold      :: Integer
+  , _heroMineCount :: Integer
+  , _heroSpawnPos  :: Pos
+  , _heroCrashed   :: Bool
 } deriving (Show, Eq)
+
+$(makeLenses ''Hero)
 
 instance FromJSON Hero where
     parseJSON (Object o) = Hero <$> o .: "id"
@@ -225,6 +186,67 @@ instance ToJSON Dir where
     toJSON East = String "East"
     toJSON West = String "West"
 
+posDir :: Pos -> Pos -> Dir
+posDir (Pos x1 y1) (Pos x2 y2) =
+  let
+    err x = error $ "assert: posDir: large " ++ x
+  in
+  if | x1 == x2 ->
+      if | y2 == y1-1 -> South
+         | y2 == y1+1 -> North
+         | otherwise -> err "dy"
+     | y1 == y2 ->
+      if | x2 == x1-1 -> West
+         | x2 == x1+1 -> East
+         | otherwise -> err " dx"
+     | otherwise -> err "dx,dy"
+
+newtype GameId = GameId Text
+    deriving (Show, Eq)
+
+instance FromJSON GameId where
+    parseJSON x = GameId <$> parseJSON x
+
+data Game = Game {
+    _gameId       :: GameId
+  , _gameTurn     :: Integer
+  , _gameMaxTurns :: Integer
+  , _gameHeroes   :: [Hero]
+  , _gameBoard    :: Board
+  , _gameFinished :: Bool
+} deriving (Show, Eq)
+
+$(makeLenses ''Game)
+
+data State = State {
+    _stateGame    :: Game
+  , _stateHero    :: Hero
+  , _stateToken   :: Text
+  , _stateViewUrl :: Text
+  , _statePlayUrl :: Text
+} deriving (Show, Eq)
+
+$(makeLenses ''State)
+
+instance FromJSON State where
+    parseJSON (Object o) = State <$> o .: "game"
+                                 <*> o .: "hero"
+                                 <*> o .: "token"
+                                 <*> o .: "viewUrl"
+                                 <*> o .: "playUrl"
+    parseJSON _ = mzero
+
+
+instance FromJSON Game where
+    parseJSON (Object o) = Game <$> o .: "id"
+                                <*> o .: "turn"
+                                <*> o .: "maxTurns"
+                                <*> o .: "heroes"
+                                <*> o .: "board"
+                                <*> o .: "finished"
+    parseJSON _ = mzero
+
+
 request :: (Client m) => Text -> Value -> m State
 request url val =
   let
@@ -260,7 +282,7 @@ startTraining mi mb = do
                        <> maybe [] (\b -> [("map",  toJSON b)]) mb))
 
 move :: (Client m) => State -> Dir -> m State
-move s d = request (statePlayUrl s) (object [("dir", toJSON d)])
+move s d = request (s^.statePlayUrl) (object [("dir", toJSON d)])
 
 startArena :: (Client m) => m State
 startArena = do

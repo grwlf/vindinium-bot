@@ -47,7 +47,7 @@ import Control.Monad.State.Strict
 import Control.Monad.Random
 import Control.Monad.Reader
 import Control.Break
-import Control.Lens (Lens, makeLenses, (%=), view, use, uses, _1, _2, _3, _4, _5, _6)
+import Control.Lens (Lens, makeLenses, (%=), (^.), view, use, uses, _1, _2, _3, _4, _5, _6)
 import Data.Bits
 import Data.Ratio
 import Data.Tuple

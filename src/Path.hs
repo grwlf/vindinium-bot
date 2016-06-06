@@ -24,6 +24,15 @@ minePaths b@Board{..} =
       Just p -> modify (HashMap.insert (m1,m2) p)
       Nothing -> return ()
 
+-- | Returns list of (mine,distance), not owned by the Hero, smaller distances first
+nearestMines :: Hero -> Board -> [(Pos,Int)]
+nearestMines h b =
+  sortBy (compare `on` snd) $
+  map (id &&& (sqdist (h^.heroPos))) $
+  filter ((/=(MineTile $ Just $ h^.heroId)) . ((b^.bo_tiles) HashMap.!)) $
+  HashSet.toList (b^.bo_mines)
+
+
 pathAstar :: Pos -> Pos -> Board -> Maybe Path
 pathAstar from to b =
   let
