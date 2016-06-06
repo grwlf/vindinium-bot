@@ -46,22 +46,21 @@ main = runG defaultSettings $ do
       b <- use (s_client.stateGame.gameBoard)
       me <- pure (cs^.stateHero)
 
-      out [ printBoard b ]
-      out [ tshow $ view bo_mines b]
+      let p = me^.heroPos
 
-      mines <- pure $ nearestMines me b
-      m <-
-        case mines of
-          (mine,_):_ -> do
-            out ["Moving to ", tshow mine]
-            let path = pathAstar mine (me^.heroPos) b
-            -- FIXME
-            return North
-          [] -> do
-            out ["Random movement"]
+      out [ printBoard b ]
+
+      dir <-
+        case nearestMinePath me b of
+          Just (goal,path) -> do
+            let (d,_) = step p path
+            out ["Moving towards ", tshow goal]
+            return d
+          Nothing -> do
             return South
 
-      cs' <- move cs m
+      cs' <- move cs dir
+
       s_client %= const cs'
 
       when (view (stateGame.gameFinished) cs') $ do

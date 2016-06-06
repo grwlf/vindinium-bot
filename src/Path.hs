@@ -2,6 +2,7 @@
 {-# LANGUAGE RecordWildCards #-}
 module Path where
 
+import Prelude hiding(break)
 import Data.Graph.AStar
 import qualified Data.HashSet as HashSet
 import qualified Data.HashMap.Strict as HashMap
@@ -9,10 +10,17 @@ import qualified Data.HashMap.Strict as HashMap
 import Imports
 import Client
 
-data Path = Path { p_pos :: [Pos] }
+data Path = Path { p_final :: Pos, p_pos :: [Pos]  }
   deriving(Show,Eq,Ord)
 
 
+step :: Pos -> Path -> (Dir, Maybe Path)
+step p Path{..} =
+  case p_pos of
+    (p':ps) -> (posDiff p p', Just $ Path{..} {p_pos = ps})
+    [] -> (posDiff p p_final, Nothing)
+
+-- | Paths between mines
 minePaths :: Board -> HashMap (Pos,Pos) Path
 minePaths b@Board{..} =
   let
@@ -32,10 +40,17 @@ nearestMines h b =
   filter ((/=(MineTile $ Just $ h^.heroId)) . ((b^.bo_tiles) HashMap.!)) $
   HashSet.toList (b^.bo_mines)
 
+nearestMinePath :: Hero -> Board -> Maybe (Pos, Path)
+nearestMinePath h b =
+  for (nearestMines h b) $ \(m,_) ->
+    case pathAstar (h^.heroPos) m b of
+      Just p -> break (m,p)
+      Nothing -> return ()
 
 pathAstar :: Pos -> Pos -> Board -> Maybe Path
 pathAstar from to b =
   let
+
     near p =
       boardAdjascentTiles (
         \case
@@ -45,11 +60,13 @@ pathAstar from to b =
 
     dist1 _ _ = 1
 
-    heu p = minimum $ map (sqdist p) goals
-
     goals = HashSet.toList (near to)
 
-    isgoal x = any (==x) goals
+    heu p = minimum $ map (\p' -> sqdist p p') goals
+
+    isgoal p = any (\p' -> p == p') goals
+
   in
-  Path <$>
+  Path to <$>
   aStar near dist1 heu isgoal from
+

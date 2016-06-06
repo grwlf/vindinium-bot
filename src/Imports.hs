@@ -9,6 +9,7 @@ module Imports (
   , module Control.Monad.State.Strict
   , module Control.Monad.Random
   , module Control.Monad.Reader
+  , module Control.Monad.Identity
   , module Control.Break
   , module Control.Lens
   , module Data.Bits
@@ -46,6 +47,7 @@ import Control.Monad.Trans
 import Control.Monad.State.Strict
 import Control.Monad.Random
 import Control.Monad.Reader
+import Control.Monad.Identity
 import Control.Break
 import Control.Lens (Lens, makeLenses, (%=), (^.), view, use, uses, _1, _2, _3, _4, _5, _6)
 import Data.Bits

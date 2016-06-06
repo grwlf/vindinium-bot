@@ -109,13 +109,17 @@ $(makeLenses ''Board)
 boardPositions Board{..} = [ (Pos x y) | x <- [0.._bo_size-1], y <- [0.._bo_size-1]]
 boardTiles b = map (view bo_tiles b HashMap.!) (boardPositions b)
 
-boardAdjascentTiles :: (Tile -> Bool) -> Pos -> Board -> HashSet Pos
+boardAdjascentTiles :: (Tile -> Bool) -> Pos -> Board -> HashSet (Pos)
 boardAdjascentTiles flt Pos{..} Board{..} =
   HashSet.unions $
-  flip concatMap [Pos x y | x <- [posX-1,posX+1], y<-[posY-1,posY+1]] $ \pos ->
+  flip concatMap [
+    (Pos (posX-1) posY),
+    (Pos (posX+1) posY),
+    (Pos posX (posY-1)),
+    (Pos posX (posY+1))] $ \p ->
     fromMaybe [] $ do
-      tile <- HashMap.lookup pos _bo_tiles
-      if flt tile then Just [HashSet.singleton pos] else Nothing
+      tile <- HashMap.lookup p _bo_tiles
+      if flt tile then Just [HashSet.singleton p] else Nothing
 
 instance FromJSON Board where
     parseJSON (Object o) = parseBoard <$> o .: "size" <*> o .: "tiles"
@@ -177,7 +181,9 @@ printTile (MineTile Nothing) = "$-"
 printTile (MineTile (Just (HeroId i))) = "$" <> (pack $ show i)
 
 data Dir = Stay | North | South | East | West
-    deriving (Show, Eq)
+    deriving (Show, Eq, Ord, Generic)
+
+instance Hashable Dir
 
 instance ToJSON Dir where
     toJSON Stay = String "Stay"
@@ -186,20 +192,16 @@ instance ToJSON Dir where
     toJSON East = String "East"
     toJSON West = String "West"
 
-posDir :: Pos -> Pos -> Dir
-posDir (Pos x1 y1) (Pos x2 y2) =
-  let
-    err x = error $ "assert: posDir: large " ++ x
-  in
-  if | x1 == x2 ->
-      if | y2 == y1-1 -> South
-         | y2 == y1+1 -> North
-         | otherwise -> err "dy"
-     | y1 == y2 ->
-      if | x2 == x1-1 -> West
-         | x2 == x1+1 -> East
-         | otherwise -> err " dx"
-     | otherwise -> err "dx,dy"
+-- | Difference between adjascent positions
+posDiff :: Pos -> Pos -> Dir
+posDiff p1@(Pos x1 y1) p2@(Pos x2 y2) =
+  case (x2-x1, y2-y1) of
+    (1,0) -> West
+    (-1,0) -> East
+    (0,1) -> South
+    (0,-1) -> North
+    _ -> error $ "assert: posDiff: non-adjascent positions: "
+              ++ show p1 ++ " " ++ show p2
 
 newtype GameId = GameId Text
     deriving (Show, Eq)
