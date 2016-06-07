@@ -8,11 +8,10 @@ oops() {
 set -x
 while true ; do
 
-  master=`git branch -v | grep -w master | tr -d '*' | awk '{print $2}'`
-  release=`git branch -v | grep -w release | tr -d '*' | awk '{print $2}'`
+  git fetch
 
-  if test "$release" != "$master" ; then
-    git merge --no-ff origin/master || oops "merge failed"
+  if git branch -v | grep -q behind ; then
+    git pull || oops "Pull failed"
     cabal build
   fi
 
