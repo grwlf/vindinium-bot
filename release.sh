@@ -8,8 +8,8 @@ oops() {
 set -x
 while true ; do
 
-  master=`git branch -v | grep master | tr -d '*' | awk '{print $2}'`
-  release=`git branch -v | grep release | tr -d '*' | awk '{print $2}'`
+  master=`git branch -v | grep -w master | tr -d '*' | awk '{print $2}'`
+  release=`git branch -v | grep -w release | tr -d '*' | awk '{print $2}'`
 
   if test "$release" != "$master" ; then
     git merge --no-ff master || oops "merge failed"
