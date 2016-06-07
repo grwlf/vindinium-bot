@@ -9,6 +9,7 @@ module Client where
 import Network.HTTP.Client
 import Network.HTTP.Types
 
+import Data.List (sortBy)
 import Data.Maybe
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -20,6 +21,7 @@ import Data.Text (Text, pack, unpack)
 import Data.Aeson
 import Data.Monoid ((<>))
 import Data.Hashable
+import Data.Function
 import GHC.Generics (Generic)
 
 import Control.Monad (liftM, mzero, forM_)
@@ -250,6 +252,17 @@ getHero g hid =
   case filter (\h -> (h^.heroId) == hid) (g^.gameHeroes) of
     [h] -> h
     _ -> error $ "assert: getHero: no hero with id " ++ show hid ++ " among " ++ show (g^.gameHeroes)
+
+overWealth :: Game -> Hero -> Integer
+overWealth g h =
+  let
+    raiting =
+      reverse $ sortBy (compare`on`_heroMineCount) $
+      filter (/=h) $ g^.gameHeroes
+  in
+  case raiting of
+    (h':_) -> h^.heroMineCount - h'^.heroMineCount
+    [] -> h^.heroMineCount
 
 data State = State {
     _stateGame    :: Game

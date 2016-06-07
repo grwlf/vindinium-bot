@@ -31,12 +31,20 @@ data S = S {
 
 $(makeLenses ''S)
 
-bot :: (Client m, MonadState S m) => m Dir
-bot = return South
+dateString :: IO String
+dateString = do
+  t <- getCurrentTime
+  let (y, m, d) = toGregorian (utctDay t)
+  return $ printf "%d-%02d-%02d-%s" y m d (show $ utctDayTime t)
 
-mineAC _ = AttackCost 20
-heroAC h = AttackCost (h^.heroLife + 20)
-tavernAC _ = AttackCost 0
+
+save :: (MonadIO m, Show a) => String -> a -> m ()
+save nm a = liftIO $ do
+  s <- dateString
+  let f = "data" </> (printf "%s-%s.txt" s nm)
+  writeFile (f++".tmp") (show a)
+  renameFile (f++".tmp") f
+
 
 main :: IO ()
 main = runG defaultSettings $ do
@@ -61,8 +69,10 @@ main = runG defaultSettings $ do
                 | otherwise -> False
           otherwise -> False
 
+      let diffWealth = overWealth g me
+
       mpath <-
-        case (me^.heroLife < 21) || (nearTavern && me^.heroLife < 90)  of
+        case (me^.heroLife < 21) || (nearTavern && me^.heroLife < 90) || diffWealth > 2  of
           True -> do
             return $ nearestTavernPath me b
           False -> do
@@ -74,16 +84,17 @@ main = runG defaultSettings $ do
         case mpath of
           Just path -> do
             let (d,_) = step p path
-            out ["Moving towards ", tshow (p_final path), " by issuing ", tshow d, " life ", tshow (me^.heroLife)]
             return d
           Nothing -> do
             out ["Empty move, life ", tshow (me^.heroLife)]
             return South
 
+      out ["Rating ", tshow (me^.heroElo), " Wealth ", tshow diffWealth, " life ", tshow (me^.heroLife)]
       cs' <- move cs dir
 
       s_client %= const cs'
 
       when (view (stateGame.gameFinished) cs') $ do
+        save "State" cs
         break ()
 

@@ -33,7 +33,9 @@ executable vindinium-bot
                        aeson,
                        astar,
                        heap,
-                       transformers
+                       transformers,
+                       time,
+                       filepath
 
   hs-source-dirs:      src,app,lib
   default-language:    Haskell2010

@@ -26,11 +26,14 @@ module Imports (
   , module Data.Text
   , module Data.HashSet
   , module Data.HashMap.Strict
+  , module Data.Time.Clock
+  , module Data.Time.Calendar
   , module Debug.Trace
   , module Prelude
   , module System.Random
   , module System.Random.Mersenne.Pure64
   , module System.Directory
+  , module System.FilePath
   , module Text.Printf
   , module Text.Heredoc
   , module Text.Show.Pretty
@@ -65,11 +68,14 @@ import Data.Monoid ((<>))
 import Data.Foldable
 import Data.Function
 import Data.Text (Text)
+import Data.Time.Clock
+import Data.Time.Calendar
 import Debug.Trace hiding(traceM)
 import Prelude hiding(break)
 import System.Random
 import System.Random.Mersenne.Pure64
 import System.Directory
+import System.FilePath
 import Text.Printf
 import Text.Heredoc
 import Text.Show.Pretty hiding(String)
