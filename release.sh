@@ -12,7 +12,7 @@ while true ; do
   release=`git branch -v | grep -w release | tr -d '*' | awk '{print $2}'`
 
   if test "$release" != "$master" ; then
-    git merge --no-ff master || oops "merge failed"
+    git merge --no-ff origin/master || oops "merge failed"
     cabal build
   fi
 
