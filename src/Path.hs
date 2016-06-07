@@ -30,13 +30,15 @@ data Goal = Goal {
   -- ^ Distance to the goal
   , _goalRevard :: Rational
   -- ^ Revard in 'mine' units
+  -- , _goalHP :: Integer
   , _goalHP :: Integer
+  , _goalPathFactor :: Integer
   } deriving(Show)
 
 $(makeLenses ''Goal)
 
 goalLifePrice :: Goal -> Integer
-goalLifePrice g = (pathLength (g^.goalPath)) + (g^.goalHP)
+goalLifePrice g = ((g^.goalPathFactor) * pathLength (g^.goalPath)) + (g^.goalHP)
 
 -- compareGoals :: Goal -> Goal -> Ordering
 -- compareGoals g1 g2 =
@@ -67,7 +69,12 @@ heroGoals h g =
 
   in
   catMaybes $
-  map (\(p,hid) -> Goal <$> (pathAstar (h^.heroPos) p b) <*> (pure $ (heroMines hid b) % 4) <*> (pure (hp hid))) $
+  map (\(p,hid) ->
+    Goal
+      <$> (pathAstar (h^.heroPos) p b)
+      <*> (pure $ (heroMines hid b) % 4)
+      <*> (pure (hp hid))
+      <*> (pure 2)) $
   filter (\(_,hid) -> not $ nearTavern hid) $
   filter (\(_,hid) -> (h^.heroId) /= hid) $
   HashSet.toList (b^.bo_heroes)
@@ -78,7 +85,11 @@ mineGoals h g =
     b = g^.gameBoard
   in
   catMaybes $
-  map (\p -> Goal <$> (pathAstar (h^.heroPos) p b) <*> (pure 1) <*> (pure 20)) $
+  map (\p -> Goal
+    <$> (pathAstar (h^.heroPos) p b)
+    <*> pure 1
+    <*> pure 20
+    <*> pure 1) $
   filter ((/=(MineTile $ Just $ h^.heroId)) . ((b^.bo_tiles) HashMap.!)) $
   HashSet.toList (b^.bo_mines)
 
