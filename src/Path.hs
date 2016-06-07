@@ -58,9 +58,17 @@ heroGoals h g =
   let
     b = g^.gameBoard
     hp hid = (getHero g hid)^.heroLife
+    nearTavern hid =
+      let
+        hp = (getHero g hid)^.heroPos
+        tavs = b^.bo_taverns
+      in
+      any ((==1) . (posDist hp)) tavs
+
   in
   catMaybes $
   map (\(p,hid) -> Goal <$> (pathAstar (h^.heroPos) p b) <*> (pure $ (heroMines hid b) % 4) <*> (pure (hp hid))) $
+  filter (\(_,hid) -> not $ nearTavern hid) $
   filter (\(_,hid) -> (h^.heroId) /= hid) $
   HashSet.toList (b^.bo_heroes)
 
