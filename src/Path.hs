@@ -71,7 +71,7 @@ heroGoals h g =
   catMaybes $
   map (\(p,hid) ->
     Goal
-      <$> (pathAstar (h^.heroPos) p b)
+      <$> (pathAstar (h^.heroPos) p g h)
       <*> (pure $ (heroMines hid b) % 4)
       <*> (pure (hp hid))
       <*> (pure 2)) $
@@ -86,7 +86,7 @@ mineGoals h g =
   in
   catMaybes $
   map (\p -> Goal
-    <$> (pathAstar (h^.heroPos) p b)
+    <$> (pathAstar (h^.heroPos) p g h)
     <*> pure 1
     <*> pure 20
     <*> pure 1) $
@@ -109,32 +109,58 @@ nearestTaverns h b =
   map (id &&& (sqdist (h^.heroPos))) $
   HashSet.toList (b^.bo_taverns)
 
-probePath :: [Pos] -> Hero -> Board -> Maybe Path
-probePath ps h b =
+probePath :: [Pos] -> Hero -> Game -> Maybe Path
+probePath ps h g =
+  let
+    b = g^.gameBoard
+  in
   for ps $ \pos -> do
-    case pathAstar (h^.heroPos) pos b of
+    case pathAstar (h^.heroPos) pos g h of
       Just p -> break p
       Nothing -> return ()
 
 -- nearestMinePath = probePath nearestMines
-nearestTavernPath h b = probePath (nearestTaverns h b) h b
+nearestTavernPath h g = probePath (nearestTaverns h (g^.gameBoard)) h g
 
-pathAstar :: Pos -> Pos -> Board -> Maybe Path
-pathAstar from to b =
+pathAstar :: Pos -> Pos -> Game -> Hero -> Maybe Path
+pathAstar from to g me =
   let
+    b = g^.gameBoard
 
     near p =
-      boardAdjascentTiles (
-        \case
-          FreeTile -> True
-          HeroTile _ -> True
-          _ -> False) p b
+      let
+        tiles =
+          boardAdjascentTiles (
+            \case
+              FreeTile -> True
+              HeroTile _ -> True
+              _ -> False) p b
+
+        safe = any (
+          \pos ->
+            case (b^.bo_tiles) HashMap.! pos of
+              TavernTile -> True
+              _ -> False
+          ) tiles
+
+        danger = any (
+          \pos ->
+            case (b^.bo_tiles) HashMap.! pos of
+              HeroTile hid -> ((getHero g hid)^.heroLife) > (me^.heroLife)
+              _ -> False
+          ) tiles
+      in
+      case safe || not danger of
+        True -> tiles
+        False -> HashSet.empty
 
     dist1 _ _ = 1
 
     goals = HashSet.toList (near to)
 
-    heu p = minimum $ map (\p' -> sqdist p p') goals
+    heu p = case map (\p' -> sqdist p p') goals of
+              x@(_:_) -> minimum x
+              _ -> 0
 
     isgoal p = any (\p' -> p == p') goals
 
@@ -144,14 +170,14 @@ pathAstar from to b =
 
 
 -- | Paths between mines
-minePaths :: Board -> HashMap (Pos,Pos) Path
-minePaths b@Board{..} =
-  let
-    mines = [(m1,m2) | m1 <- HashSet.toList _bo_mines, m2 <- HashSet.toList _bo_mines, m1 /= m2 ]
-  in
-  flip execState HashMap.empty $ do
-  forM_ mines $ \(m1,m2) -> do
-    case pathAstar m1 m2 b of
-      Just p -> modify (HashMap.insert (m1,m2) p)
-      Nothing -> return ()
+-- minePaths :: Board -> HashMap (Pos,Pos) Path
+-- minePaths b@Board{..} =
+--   let
+--     mines = [(m1,m2) | m1 <- HashSet.toList _bo_mines, m2 <- HashSet.toList _bo_mines, m1 /= m2 ]
+--   in
+--   flip execState HashMap.empty $ do
+--   forM_ mines $ \(m1,m2) -> do
+--     case pathAstar m1 m2 b of
+--       Just p -> modify (HashMap.insert (m1,m2) p)
+--       Nothing -> return ()
 

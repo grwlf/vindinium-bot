@@ -74,7 +74,7 @@ main = runG defaultSettings $ do
       mpath <-
         case (me^.heroLife < 21) || (nearTavern && me^.heroLife < 90) || diffWealth > 2  of
           True -> do
-            return $ nearestTavernPath me b
+            return $ nearestTavernPath me g
           False -> do
             let go = probeGoal me g >>= return . view goalPath
             -- out ["Goal: ", tshow go]
